@@ -6,8 +6,11 @@ class Blog(models.Model):
     image = models.ImageField(upload_to='images/')
     body = models.TextField()
 
-# Create a migration
+    def __str__(self):
+        return self.title
 
-# Migrate
+    def summary(self):
+        return self.body[:100]
 
-#Add tot he admin
+    def pub_date_pretty(self):
+        return self.pub_date.strftime('%b %e %Y')
