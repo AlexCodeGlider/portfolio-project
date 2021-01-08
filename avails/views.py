@@ -61,7 +61,10 @@ def cleanup(df, suffix):
     df['Available?'].loc[mask] = df['Non-Exclusive Date'].loc[mask]
 
     sale_activity = tidy_split(df, 'Previous Sale Activity', sep='\n', keep=False)
+    sale_activity['Previous Sale Activity'] = sale_activity['Previous Sale Activity'].str.replace('.', '')
     sale_activity_enddates = sale_activity['Previous Sale Activity'].str[-11:]
+    date_dict = {'ene': '01', 'feb': '02', 'mar': '03', 'abr': '04', 'may':'05', 'jun': '06', 'jul': '07', 'ago': '08', 'sep':'09', 'oct': '10', 'nov': '11', 'dic': '12'}
+    sale_activity_enddates = sale_activity_enddates.replace(date_dict, regex=True)
     sale_activity_enddates = sale_activity_enddates.replace('own-Unknown', np.nan).astype('datetime64')
     sale_activity['end_dates'] = sale_activity_enddates
     sale_activity['end_dates'].fillna(sale_activity['Acq. Expires'], inplace=True)
@@ -198,7 +201,7 @@ def avails(request):
                 merged_df[cols_ordered + sales].to_excel(writer, sheet_name='Avails')
                 writer.save()
                 response = HttpResponse(b.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-                response['Content-Disposition'] = 'attachment; filename=%s.xlsx' % 'Download'
+                response['Content-Disposition'] = 'attachment; filename=%s.xlsx' % 'SVOD-PayTV Avails'
             return response
         else:
             return render(request, 'avails/avails.html', {'error': 'All files required'})
