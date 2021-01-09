@@ -59,6 +59,8 @@ def cleanup(df, suffix):
     df['Holdback'].loc[mask] = pd.NaT
     mask = (df['Non-Exclusive Date'] < df['Exclusive Date']) & (df['Non-Exclusive Date'] > dt.datetime.today())
     df['Available?'].loc[mask] = df['Non-Exclusive Date'].loc[mask]
+    df['First Run or Library'] = df['Is Reissue?'].fillna('First Run')
+    df['First Run or Library'] = df['First Run or Library'].map({'Yes': 'Library', 'First Run': 'First Run'})
 
     sale_activity = tidy_split(df, 'Previous Sale Activity', sep='\n', keep=False)
     sale_activity['Previous Sale Activity'] = sale_activity['Previous Sale Activity'].str.replace('.', '')
@@ -120,19 +122,19 @@ def avails(request):
             merged_df = ptv_avails.merge(svod_avails, on=list(ptv_avails.columns[:13]), how='left')
 
             agg_dict = {'Region': lambda x: ' & '.join(x),
-                        'Is Reissue?_PanRegionalPayTV':'first',
+                        'First Run or Library_PanRegionalPayTV':'first',
                         'Available?_PanRegionalPayTV': 'first',
                         'Holdback_PanRegionalPayTV': 'first',
                         'Note_PanRegionalPayTV': 'first',
                         'Acq. Expires_PanRegionalPayTV': 'first',
                         'Previous Sale Activity_PanRegionalPayTV': 'first',
-                        'Is Reissue?_LocalPayTV':'first',
+                        'First Run or Library_LocalPayTV':'first',
                         'Available?_LocalPayTV': 'first',
                         'Holdback_LocalPayTV': 'first',
                         'Note_LocalPayTV': 'first',
                         'Acq. Expires_LocalPayTV': 'first',
                         'Previous Sale Activity_LocalPayTV': 'first',
-                        'Is Reissue?_SVOD':'first',
+                        'First Run or Library_SVOD':'first',
                         'Available?_SVOD': 'first',
                         'Holdback_SVOD': 'first',
                         'Note_SVOD': 'first',
@@ -178,24 +180,39 @@ def avails(request):
             merged_df[date_cols] = merged_df[date_cols].replace({pd.Timestamp.max: pd.NaT})
             for col in date_cols:
                 merged_df[col] = merged_df[col].apply(lambda x: x.date())
-            cols_ordered = ['Unique Id', 'Title', 'Region', 'Genre', 'Cast Member',
-                            'Year Completed', 'Director', 'Project Type', 'Synopsis', 'Website',
-                            'Original Format', 'Dialogue Language', 'Subtitle Language', 'Non-Exclusive Date_PanRegionalPayTV',
-                            'Exclusive Date_PanRegionalPayTV', 'Non-Exclusive Date_LocalPayTV',
-                            'Exclusive Date_LocalPayTV', 'Non-Exclusive Date_SVOD',
-                            'Exclusive Date_SVOD', 'Is Reissue?_PanRegionalPayTV',
-                            'Available?_PanRegionalPayTV', 'Holdback_PanRegionalPayTV',
-                            'Note_PanRegionalPayTV', 'Previous Sale Activity_PanRegionalPayTV',
-                            'Is Reissue?_LocalPayTV', 'Available?_LocalPayTV',
-                            'Holdback_LocalPayTV', 'Note_LocalPayTV',
-                            'Previous Sale Activity_LocalPayTV', 'Is Reissue?_SVOD',
-                            'Available?_SVOD', 'Holdback_SVOD', 'Note_SVOD', 'Acq. Expires_SVOD',
-                            'Previous Sale Activity_SVOD', 'Link',
-                            'Password', 'US Box Office', 'LATAM Box Office', 'IMDB Link', 'USA ',
-                            'Mexico', 'Brazil', ' Argentina', 'Bolivia', 'Chile', 'Colombia ',
-                            'Costa Rica', 'Ecuador', 'El Salvador', 'Guatemala', 'Honduras',
-                            'Nicaragua', 'Panama', 'Paraguay', 'Peru', 'Dominican Republic',
-                            'Uruguay', 'Venezuela']
+                merged_df[col] = merged_df[col].apply(lambda x: 'Now' if x == dt.date.today() else x)
+            cols_ordered = ['Project Type', 'Unique Id', 'Title', 'Region', 'Year', 'Genre', 'Cast Member',
+                            'Director',  'Synopsis', 'Website',
+                            'Original Format', 'Dialogue Language', 'Subtitle Language',
+
+                            'First Run or Library_PanRegionalPayTV',
+                            'Available?_PanRegionalPayTV', 'Non-Exclusive Date_PanRegionalPayTV',
+                            'Exclusive Date_PanRegionalPayTV', 'Note_PanRegionalPayTV',
+                            'Holdback_PanRegionalPayTV',
+
+                            'First Run or Library_LocalPayTV',
+                            'Available?_LocalPayTV', 'Non-Exclusive Date_LocalPayTV',
+                            'Exclusive Date_LocalPayTV', 'Note_LocalPayTV',
+                            'Holdback_LocalPayTV',
+
+                            'First Run or Library_SVOD',
+                            'Available?_SVOD', 'Non-Exclusive Date_SVOD',
+                            'Exclusive Date_SVOD', 'Note_SVOD',
+                            'Holdback_SVOD',
+
+                            'Acq. Expires',
+                            'Link','Password', 'IMDB Link', 'US Box Office', 'LATAM Box Office', 'USA ',
+                   'Mexico', 'Brazil', ' Argentina', 'Bolivia', 'Chile', 'Colombia ',
+                   'Costa Rica', 'Ecuador', 'El Salvador', 'Guatemala', 'Honduras',
+                   'Nicaragua', 'Panama', 'Paraguay', 'Peru', 'Dominican Republic',
+                   'Uruguay', 'Venezuela']
+
+            merged_df['Year'] = merged_df['Year Completed']
+            merged_df['Acq. Expires'] = merged_df['Acq. Expires_SVOD'].apply(lambda x: x.date())
+            merged_df[[col for col in merged_df.columns if 'Available' in col]] = merged_df[[col for col in merged_df.columns if 'Available' in col]].apply(lambda x: x.apply(lambda x: pd.Timestamp(x) if type(x) == int else x))
+            merged_df[[col for col in merged_df.columns if 'Available' in col]] = merged_df[[col for col in merged_df.columns if 'Available' in col]].apply(lambda x: x.apply(lambda x: str(x).replace(' 00:00:00', '')))
+            merged_df[[col for col in merged_df.columns if 'Holdback' in col]] = merged_df[[col for col in merged_df.columns if 'Holdback' in col]].apply(lambda x: x.apply(lambda x: str(x).replace(' 00:00:00', '')))
+            
             with BytesIO() as b:
                 writer = pd.ExcelWriter(b, engine='openpyxl')
                 merged_df[cols_ordered + sales].to_excel(writer, sheet_name='Avails')
