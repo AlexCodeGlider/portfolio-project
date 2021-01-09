@@ -1,39 +1,41 @@
 {% extends 'base.html' %}
 
 {% block content %}
-
 {% if error %}
 {{ error }}
 <br />
 <br />
 {% endif %}
 
+{% if user.is_authenticated %}
 <h1>Upload files</h1>
 
 <form method="POST" action="{% url 'avails' %}" enctype="multipart/form-data">
-{% csrf_token %}
-SVOD Avails:
-<br />
-<input type="file" name="svod_avails" />
-<br />
-PanRegional Pay TV Avails:
-<br />
-<input type="file" name="ptv_avails" />
-<br />
-Local Pay TV Avails:
-<br />
-<input type="file" name="ptv_local_avails" />
-<br />
-Screening Links:
-<br />
-<input type="file" name="screeners" />
-<br />
-Ratings:
-<br />
-<input type="file" name="ratings" />
-<br />
-<br />
-<input class="btn btn-primary" type="submit" value="Upload" />
+  {% csrf_token %}
+  SVOD Avails:
+  <br />
+  <input type="file" name="svod_avails" />
+  <br />
+  PanRegional Pay TV Avails:
+  <br />
+  <input type="file" name="ptv_avails" />
+  <br />
+  Local Pay TV Avails:
+  <br />
+  <input type="file" name="ptv_local_avails" />
+  <br />
+  Screening Links:
+  <br />
+  <input type="file" name="screeners" />
+  <br />
+  Ratings:
+  <br />
+  <input type="file" name="ratings" />
+  <br />
+  <br />
+  <input class="btn btn-primary" type="submit" value="Upload" />
 </form>
-
+{% else %}
+  <a href="{% url 'login' %}" style="text-decoration: none"><p class="lead text-muted">Please login to continue</p></a>
+{% endif %}
 {% endblock %}

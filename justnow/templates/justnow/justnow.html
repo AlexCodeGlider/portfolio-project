@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block content %}
+{% if user.is_authenticated %}
+<h1>Just Now</h1>
+
+<form method="POST" action="{% url 'justnow' %}" enctype="multipart/form-data">
+{% csrf_token %}
+Title:
+<br />
+<input type="text" name="title" />
+<br />
+<br />
+<input class="btn btn-primary" type="submit" value="Submit" />
+</form>
+{% else %}
+{% endif %}
+{% endblock%}

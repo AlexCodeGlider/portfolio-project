@@ -31,6 +31,7 @@ ALLOWED_HOSTS = []
 # Application definition
 
 INSTALLED_APPS = [
+    'justnow.apps.JustnowConfig',
     'blog.apps.BlogConfig',
     'jobs.apps.JobsConfig',
     'accounts.apps.AccountsConfig',

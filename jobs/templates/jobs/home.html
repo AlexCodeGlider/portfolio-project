@@ -11,6 +11,8 @@
         {% else %}
         <a href="{% url 'login' %}" style="text-decoration: none"><p class="lead text-muted">Please login to continue</p></a>
         {% endif %}
+
+
       </div>
     </div>
   <img src="{% static '5.jpg' %}" height="500" />
@@ -18,7 +20,7 @@
 
   <div class="album py-5 bg-light">
     <div class="container">
-
+      {% if user.is_authenticated %}
       <div class="row row-cols-1 row-cols-sm-2 row-cols-md-3 g-3">
         {% for job in jobs.all %}
         <a href="{{ job.link }}">
@@ -33,6 +35,8 @@
         </a>
         {% endfor %}
       </div>
+      {% else %}
+      {% endif %}
     </div>
   </div>
 
