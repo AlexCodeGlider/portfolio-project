@@ -176,14 +176,12 @@ def avails(request):
 
             merged_df = pd.merge(merged_df, ptv_avails[metadata].drop_duplicates(), on='Unique Id')
 
-            screeners = pd.read_excel('Z:\LEDAFILMS\Alteryx\Filmtracks\Project Data ID.xlsx')
             screeners.dropna(axis=0, subset=['Unique Identifier'], inplace=True)
             screeners['Unique Id'] = screeners['Unique Identifier'].astype(int)
             screeners.drop(['Unique Identifier', 'Title', 'Web Site'], axis = 1, inplace=True)
 
             merged_df = pd.merge(merged_df, screeners, on='Unique Id', how='left')
-
-            ratings = pd.read_excel('Z:\LEDAFILMS\Alteryx\Filmtracks\Ratings & Titles.xls')
+            
             ratings.dropna(axis=0, subset=['Unique Identifier'], inplace=True)
             ratings['Unique Id'] = ratings['Unique Identifier'].astype(int)
             ratings.drop(['Unique Identifier', 'Title', 'Imdb'], axis = 1, inplace=True)
