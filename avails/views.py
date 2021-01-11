@@ -176,15 +176,7 @@ def avails(request):
 
             merged_df = pd.merge(merged_df, ptv_avails[metadata].drop_duplicates(), on='Unique Id')
 
-            screeners.dropna(axis=0, subset=['Unique Identifier'], inplace=True)
-            screeners['Unique Id'] = screeners['Unique Identifier'].astype(int)
-            screeners.drop(['Unique Identifier', 'Title', 'Web Site'], axis = 1, inplace=True)
-
             merged_df = pd.merge(merged_df, screeners, on='Unique Id', how='left')
-            
-            ratings.dropna(axis=0, subset=['Unique Identifier'], inplace=True)
-            ratings['Unique Id'] = ratings['Unique Identifier'].astype(int)
-            ratings.drop(['Unique Identifier', 'Title', 'Imdb'], axis = 1, inplace=True)
 
             merged_df = pd.merge(merged_df, ratings, on='Unique Id', how='left')
 
