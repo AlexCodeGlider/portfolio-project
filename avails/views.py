@@ -79,6 +79,84 @@ def cleanup(df, suffix):
     df.columns = list(df.columns[:13]) + [str(col) + '_' + suffix for col in df.columns[13:]]
     return df, [str(col) + '_' + suffix for col in sale_activity.columns]
 
+def process(df, sales, screeners, ratings):
+    metadata = ['Title', 'Genre', 'Cast Member', 'Year Completed', 'Director',
+                        'Project Type', 'Synopsis', 'Unique Id', 'Website', 'Original Format',
+                        'Dialogue Language', 'Subtitle Language']
+
+    metadata_df = df[metadata].drop_duplicates().copy()
+
+    agg_dict = {'Region': lambda x: ' & '.join(x),
+                        'First Run or Library_PanRegionalPayTV':'first',
+                        'Available?_PanRegionalPayTV': 'first',
+                         'Holdback_PanRegionalPayTV': 'first',
+                         'Note_PanRegionalPayTV': 'first',
+                         'Acq. Expires_PanRegionalPayTV': 'first',
+                         'Previous Sale Activity_PanRegionalPayTV': 'first',
+                        'First Run or Library_LocalPayTV':'first',
+                         'Available?_LocalPayTV': 'first',
+                         'Holdback_LocalPayTV': 'first',
+                         'Note_LocalPayTV': 'first',
+                         'Acq. Expires_LocalPayTV': 'first',
+                         'Previous Sale Activity_LocalPayTV': 'first',
+                        'First Run or Library_SVOD':'first',
+                         'Available?_SVOD': 'first',
+                         'Holdback_SVOD': 'first',
+                         'Note_SVOD': 'first',
+                         'Acq. Expires_SVOD': 'first',
+                         'Previous Sale Activity_SVOD': 'first'}
+
+    sales = [sale for sale in sales if not sale.startswith('_')]
+
+    for sale in sales:
+        agg_dict[sale] = 'first'
+
+    for col in df.columns:
+        if 'Exclusive Date' in col:
+            df[col].fillna(pd.Timestamp.max, inplace=True)
+
+    df = df.groupby(['Unique Id']+[col for col in df.columns if 'Date' in col]).agg(agg_dict).reset_index()
+
+    region_mapping = {'Brazil & Latin America excluding Brazil & Mexico & Mexico': 'All Latam',
+            'Brazil & Mexico & Latin America excluding Brazil & Mexico': 'All Latam',
+            'Mexico & Brazil & Latin America excluding Brazil & Mexico': 'All Latam',
+            'Mexico & Latin America excluding Brazil & Mexico & Brazil': 'All Latam',
+            'Latin America excluding Brazil & Mexico & Mexico & Brazil': 'All Latam',
+            'Latin America excluding Brazil & Mexico & Brazil & Mexico': 'All Latam',
+            'Latin America excluding Brazil & Mexico & Mexico': 'Latin America excluding Brazil',
+            'Mexico & Latin America excluding Brazil & Mexico': 'Latin America excluding Brazil',
+            'Latin America excluding Brazil & Mexico & Brazil': 'Latin America excluding Mexico',
+            'Brazil & Latin America excluding Brazil & Mexico': 'Latin America excluding Mexico',
+             'Brazil': 'Brazil',
+             'Mexico': 'Mexico',
+             'Mexico & Brazil': 'Mexico & Brazil',
+             'Brazil & Mexico': 'Mexico & Brazil',
+             'Latin America excluding Brazil & Mexico': 'Latin America excluding Brazil & Mexico',}
+
+    df['Region'] = df['Region'].map(region_mapping)
+    df = pd.merge(df, metadata_df, on='Unique Id')
+    df = pd.merge(df, screeners, on='Unique Id', how='left')
+    df = pd.merge(df, ratings, on='Unique Id', how='left')
+    acq_exp_cols = [col for col in df.columns if 'Acq. Expires' in col]
+    expiry_dates = df[acq_exp_cols[0]].apply(lambda x: x.date())
+    df.drop(acq_exp_cols, axis=1, inplace=True)
+    df['Acq. Expires'] = expiry_dates
+    date_cols = [col for col in df.columns if 'Date' in col]
+    df[date_cols] = df[date_cols].replace({pd.Timestamp.max: pd.NaT})
+
+    for col in date_cols:
+        df[col] = df[col].apply(lambda x: x.date())
+        df[col] = df[col].apply(lambda x: 'Now' if x == dt.date.today() else x)
+
+    df['Year'] = df['Year Completed']
+    df[sales] = df[sales].apply(lambda x: x.apply(lambda x: str(x)[:10] if str(x) != 'nan' else ''))
+    df[[col for col in df.columns if 'Available' in col]] = df[[col for col in df.columns if 'Available' in col]].apply(lambda x: x.apply(lambda x: pd.Timestamp(x) if type(x) == int else x))
+    df[[col for col in df.columns if 'Available' in col]] = df[[col for col in df.columns if 'Available' in col]].apply(lambda x: x.apply(lambda x: str(x).replace(' 00:00:00', '')))
+    df[[col for col in df.columns if 'Holdback' in col]] = df[[col for col in df.columns if 'Holdback' in col]].apply(lambda x: x.apply(lambda x: str(x).replace(' 00:00:00', '')))
+    df = df.apply(lambda x: x.apply(lambda x: '' if str(x) == 'NaT' else x))
+
+    return df
+
 def avails(request):
     if request.method == "POST":
         dataset = Dataset()
@@ -110,10 +188,6 @@ def avails(request):
             ratings['Unique Id'] = ratings['Unique Identifier'].astype(int)
             ratings.drop(['Unique Identifier', 'Title', 'Imdb'], axis = 1, inplace=True)
 
-            metadata = ['Title', 'Genre', 'Cast Member', 'Year Completed', 'Director',
-                        'Project Type', 'Synopsis', 'Unique Id', 'Website', 'Original Format',
-                        'Dialogue Language', 'Subtitle Language']
-
             svod_avails, svod_sales = cleanup(svod_avails, 'SVOD')
             ptv_avails, ptv_sales = cleanup(ptv_avails, 'PanRegionalPayTV')
             ptv_local_avails, ptv_local_sales = cleanup(ptv_local_avails, 'LocalPayTV')
@@ -121,75 +195,10 @@ def avails(request):
             ptv_avails = ptv_avails.merge(ptv_local_avails, on=list(ptv_avails.columns[:13]), how='left')
             merged_df = ptv_avails.merge(svod_avails, on=list(ptv_avails.columns[:13]), how='left')
 
-            agg_dict = {'Region': lambda x: ' & '.join(x),
-                        'First Run or Library_PanRegionalPayTV':'first',
-                        'Available?_PanRegionalPayTV': 'first',
-                         'Holdback_PanRegionalPayTV': 'first',
-                         'Note_PanRegionalPayTV': 'first',
-                         'Acq. Expires_PanRegionalPayTV': 'first',
-                         'Previous Sale Activity_PanRegionalPayTV': 'first',
-                        'First Run or Library_LocalPayTV':'first',
-                         'Available?_LocalPayTV': 'first',
-                         'Holdback_LocalPayTV': 'first',
-                         'Note_LocalPayTV': 'first',
-                         'Acq. Expires_LocalPayTV': 'first',
-                         'Previous Sale Activity_LocalPayTV': 'first',
-                        'First Run or Library_SVOD':'first',
-                         'Available?_SVOD': 'first',
-                         'Holdback_SVOD': 'first',
-                         'Note_SVOD': 'first',
-                         'Acq. Expires_SVOD': 'first',
-                         'Previous Sale Activity_SVOD': 'first'}
-
             sales = svod_sales+ptv_sales+ptv_local_sales
             sales = [sale for sale in sales if not sale.startswith('_')]
 
-            for sale in sales:
-                agg_dict[sale] = 'first'
-
-            merged_df['Non-Exclusive Date_PanRegionalPayTV'].fillna(pd.Timestamp.max, inplace=True)
-            merged_df['Exclusive Date_PanRegionalPayTV'].fillna(pd.Timestamp.max, inplace=True)
-            merged_df['Non-Exclusive Date_LocalPayTV'].fillna(pd.Timestamp.max, inplace=True)
-            merged_df['Exclusive Date_LocalPayTV'].fillna(pd.Timestamp.max, inplace=True)
-            merged_df['Non-Exclusive Date_SVOD'].fillna(pd.Timestamp.max, inplace=True)
-            merged_df['Exclusive Date_SVOD'].fillna(pd.Timestamp.max, inplace=True)
-
-            merged_df = merged_df.groupby(['Unique Id']+[col for col in merged_df.columns if 'Date' in col]).agg(agg_dict).reset_index()
-
-            region_mapping = {'Brazil & Latin America excluding Brazil & Mexico & Mexico': 'All Latam',
-            'Brazil & Mexico & Latin America excluding Brazil & Mexico': 'All Latam',
-            'Mexico & Brazil & Latin America excluding Brazil & Mexico': 'All Latam',
-            'Mexico & Latin America excluding Brazil & Mexico & Brazil': 'All Latam',
-            'Latin America excluding Brazil & Mexico & Mexico & Brazil': 'All Latam',
-            'Latin America excluding Brazil & Mexico & Brazil & Mexico': 'All Latam',
-            'Latin America excluding Brazil & Mexico & Mexico': 'Latin America excluding Brazil',
-            'Mexico & Latin America excluding Brazil & Mexico': 'Latin America excluding Brazil',
-            'Latin America excluding Brazil & Mexico & Brazil': 'Latin America excluding Mexico',
-            'Brazil & Latin America excluding Brazil & Mexico': 'Latin America excluding Mexico',
-             'Brazil': 'Brazil',
-             'Mexico': 'Mexico',
-             'Mexico & Brazil': 'Mexico & Brazil',
-             'Brazil & Mexico': 'Mexico & Brazil',
-             'Latin America excluding Brazil & Mexico': 'Latin America excluding Brazil & Mexico',}
-
-            merged_df['Region'] = merged_df['Region'].map(region_mapping)
-
-            merged_df = pd.merge(merged_df, ptv_avails[metadata].drop_duplicates(), on='Unique Id')
-
-            merged_df = pd.merge(merged_df, screeners, on='Unique Id', how='left')
-
-            merged_df = pd.merge(merged_df, ratings, on='Unique Id', how='left')
-
-            merged_df.drop(['Acq. Expires_PanRegionalPayTV', 'Acq. Expires_LocalPayTV'], axis=1, inplace=True)
-            merged_df.rename({'Acq. Expires_SVOD': 'Acq. Expires'}, inplace=True)
-
-            date_cols = [col for col in merged_df.columns if 'Date' in col]
-
-            merged_df[date_cols] = merged_df[date_cols].replace({pd.Timestamp.max: pd.NaT})
-
-            for col in date_cols:
-                merged_df[col] = merged_df[col].apply(lambda x: x.date())
-                merged_df[col] = merged_df[col].apply(lambda x: 'Now' if x == dt.date.today() else x)
+            df = process(merged_df, sales, screeners, ratings)
 
             cols_ordered = ['Project Type', 'Unique Id', 'Title', 'Region', 'Year', 'Genre', 'Cast Member',
                             'Director',  'Synopsis', 'Website',
@@ -217,22 +226,9 @@ def avails(request):
                             'Nicaragua', 'Panama', 'Paraguay', 'Peru', 'Dominican Republic',
                             'Uruguay', 'Venezuela']
 
-            merged_df['Year'] = merged_df['Year Completed']
-            merged_df['Acq. Expires'] = merged_df['Acq. Expires_SVOD'].apply(lambda x: x.date())
-
-            merged_df[sales] = merged_df[sales].apply(lambda x: x.apply(lambda x: str(x)[:10] if str(x) != 'nan' else ''))
-
-            merged_df[[col for col in merged_df.columns if 'Available' in col]] = merged_df[[col for col in merged_df.columns if 'Available' in col]].apply(lambda x: x.apply(lambda x: pd.Timestamp(x) if type(x) == int else x))
-
-            merged_df[[col for col in merged_df.columns if 'Available' in col]] = merged_df[[col for col in merged_df.columns if 'Available' in col]].apply(lambda x: x.apply(lambda x: str(x).replace(' 00:00:00', '')))
-
-            merged_df[[col for col in merged_df.columns if 'Holdback' in col]] = merged_df[[col for col in merged_df.columns if 'Holdback' in col]].apply(lambda x: x.apply(lambda x: str(x).replace(' 00:00:00', '')))
-
-            merged_df = merged_df.apply(lambda x: x.apply(lambda x: '' if str(x) == 'NaT' else x))
-
             with BytesIO() as b:
                 writer = pd.ExcelWriter(b, engine='openpyxl')
-                merged_df[cols_ordered + sales].to_excel(writer, sheet_name='Avails')
+                df[cols_ordered + sales].to_excel(writer, sheet_name='Avails')
                 writer.save()
                 response = HttpResponse(b.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
                 response['Content-Disposition'] = 'attachment; filename=%s.xlsx' % 'SVOD-PayTV Avails'
