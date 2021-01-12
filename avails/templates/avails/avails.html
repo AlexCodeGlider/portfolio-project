@@ -35,13 +35,13 @@
   <input type="file" name="ratings" />
   <br />
   <br />
-  <input class="btn btn-primary" type="submit" value="Upload" />
+  <input class="btn btn-primary" type="submit" value="SVOD-PayTV" />
 </form>
 </div>
 <div class="col-4">
 <form method="POST" action="{% url 'avails' %}" enctype="multipart/form-data">
 {% csrf_token %}
-PanRegional Pay TV Avails:
+Pay TV Avails:
 <br />
 <input type="file" name="ptv_avails" />
 <br />
@@ -54,7 +54,7 @@ Ratings:
 <input type="file" name="ratings" />
 <br />
 <br />
-<input class="btn btn-primary" type="submit" value="Upload" />
+<input class="btn btn-primary" type="submit" value="Pay TV" />
 </form>
 </div>
 </div>

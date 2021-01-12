@@ -262,12 +262,16 @@ def avails(request):
                             'Nicaragua', 'Panama', 'Paraguay', 'Peru', 'Dominican Republic',
                             'Uruguay', 'Venezuela']
 
+            filename = 'PanRegional PayTV Avails'
+            if 'Local' in request.FILES['ptv_avails'].name:
+                 filename = 'Local PayTV Avails'
+
             with BytesIO() as b:
                 writer = pd.ExcelWriter(b, engine='openpyxl')
                 df[cols_ordered + sales].to_excel(writer, sheet_name='Avails')
                 writer.save()
                 response = HttpResponse(b.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-                response['Content-Disposition'] = 'attachment; filename=%s.xlsx' % 'PanRegionalPayTV Avails'
+                response['Content-Disposition'] = 'attachment; filename=%s.xlsx' % filename
             return response
         else:
             return render(request, 'avails/avails.html', {'error': 'All files required'})
