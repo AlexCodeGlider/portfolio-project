@@ -57,6 +57,25 @@ Ratings:
 <input class="btn btn-primary" type="submit" value="Pay TV" />
 </form>
 </div>
+<div class="col-4">
+<form method="POST" action="{% url 'avails' %}" enctype="multipart/form-data">
+{% csrf_token %}
+Free TV Avails:
+<br />
+<input type="file" name="ftv_avails" />
+<br />
+Screening Links:
+<br />
+<input type="file" name="screeners" />
+<br />
+Ratings:
+<br />
+<input type="file" name="ratings" />
+<br />
+<br />
+<input class="btn btn-primary" type="submit" value="Free TV" />
+</form>
+</div>
 </div>
 {% else %}
   <a href="{% url 'login' %}" style="text-decoration: none"><p class="lead text-muted">Please login to continue</p></a>

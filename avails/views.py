@@ -45,6 +45,19 @@ def tidy_split(df, column, sep=',', keep=False):
     new_df[column] = new_values
     return new_df
 
+def sale_activity(df, suffix=''):
+    sale_act = tidy_split(df, 'Previous Sale Activity', sep='\n', keep=False)
+    sale_act['Previous Sale Activity'] = sale_act['Previous Sale Activity'].str.replace('.', '')
+    sale_activity_enddates = sale_act['Previous Sale Activity'].str[-11:]
+    date_dict = {'ene': '01', 'feb': '02', 'mar': '03', 'abr': '04', 'may':'05', 'jun': '06', 'jul': '07', 'ago': '08', 'sep':'09', 'oct': '10', 'nov': '11', 'dic': '12'}
+    sale_activity_enddates = sale_activity_enddates.replace(date_dict, regex=True)
+    sale_activity_enddates = sale_activity_enddates.replace('own-Unknown', np.nan).astype('datetime64')
+    sale_act['end_dates'] = sale_activity_enddates
+    sale_act['end_dates'].fillna(sale_act['Acq. Expires'], inplace=True)
+    sale_act['client'] = sale_act['Previous Sale Activity'].str[:-25]
+    sale_act = sale_act.pivot_table(index='Unique Id', values='end_dates', columns='client', aggfunc=max)
+    return df.join(sale_act, on='Unique Id', how='left').sort_values(by='Unique Id'), [str(col) + suffix for col in sale_act.columns]
+
 def cleanup(df, suffix=''):
     df['Non-Exclusive Date'] = df['Non-Exclusive Date'].replace('NOT AVAIL', np.nan).astype('datetime64')
     df['Non-Exclusive Date'] = df.apply(lambda x: dt.date.today() if x['Available?'] == 'Avail NE' else x['Non-Exclusive Date'], axis=1)
@@ -62,22 +75,10 @@ def cleanup(df, suffix=''):
     df['First Run or Library'] = df['Is Reissue?'].fillna('First Run')
     df['First Run or Library'] = df['First Run or Library'].map({'Yes': 'Library', 'First Run': 'First Run'})
 
-    sale_activity = tidy_split(df, 'Previous Sale Activity', sep='\n', keep=False)
-    sale_activity['Previous Sale Activity'] = sale_activity['Previous Sale Activity'].str.replace('.', '')
-    sale_activity_enddates = sale_activity['Previous Sale Activity'].str[-11:]
-    date_dict = {'ene': '01', 'feb': '02', 'mar': '03', 'abr': '04', 'may':'05', 'jun': '06', 'jul': '07', 'ago': '08', 'sep':'09', 'oct': '10', 'nov': '11', 'dic': '12'}
-    sale_activity_enddates = sale_activity_enddates.replace(date_dict, regex=True)
-    sale_activity_enddates = sale_activity_enddates.replace('own-Unknown', np.nan).astype('datetime64')
-    sale_activity['end_dates'] = sale_activity_enddates
-    sale_activity['end_dates'].fillna(sale_activity['Acq. Expires'], inplace=True)
-    sale_activity['client'] = sale_activity['Previous Sale Activity'].str[:-25]
-    sale_activity = sale_activity.pivot_table(index='Unique Id', values='end_dates', columns='client', aggfunc=max)
-
-
-    df = df.join(sale_activity, on='Unique Id', how='left').sort_values(by='Unique Id')
+    df, sales = sale_activity(df, suffix)
 
     df.columns = list(df.columns[:13]) + [str(col) + suffix for col in df.columns[13:]]
-    return df, [str(col) + suffix for col in sale_activity.columns]
+    return df, sales
 
 def process(df, sales, screeners, ratings):
     metadata = ['Title', 'Genre', 'Cast Member', 'Year Completed', 'Director',
@@ -272,6 +273,51 @@ def avails(request):
                 writer.save()
                 response = HttpResponse(b.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
                 response['Content-Disposition'] = 'attachment; filename=%s.xlsx' % filename
+            return response
+        elif 'ftv_avails' in request.FILES.keys() and 'screeners' in request.FILES.keys() and 'ratings' in request.FILES.keys():
+            imported_ftv = dataset.load(request.FILES['ftv_avails'].read(), format='xlsx')
+            imported_ftv.headers = imported_ftv[0]
+            ftv_avails = imported_ftv.export('df')
+            ftv_avails.drop([0], inplace=True)
+
+            imported_screeners = dataset.load(request.FILES['screeners'].read(), format='xlsx')
+            screeners = imported_screeners.export('df')
+            screeners.dropna(axis=0, subset=['Unique Identifier'], inplace=True)
+            screeners['Unique Id'] = screeners['Unique Identifier'].astype(int)
+            screeners.drop(['Unique Identifier', 'Title', 'Web Site'], axis = 1, inplace=True)
+
+            imported_ratings = dataset.load(request.FILES['ratings'].read(), format='xls')
+            ratings = imported_ratings.export('df')
+            ratings.dropna(axis=0, subset=['Unique Identifier'], inplace=True)
+            ratings['Unique Id'] = ratings['Unique Identifier'].astype(int)
+            ratings.drop(['Unique Identifier', 'Title', 'Imdb'], axis = 1, inplace=True)
+
+            df = ftv_avails
+            df['Year'] = df['Year Completed']
+            mask = df['Holdback'] <= dt.datetime.today()
+            df['Holdback'].loc[mask] = pd.NaT
+            df['First Run or Library'] = df['Is Reissue?'].fillna('First Run')
+            df['First Run or Library'] = df['First Run or Library'].map({'Yes': 'Library', 'First Run': 'First Run'})
+            df = pd.merge(df, screeners, on='Unique Id', how='left')
+            df, sales = sale_activity(df)
+            df = pd.merge(df, ratings, on='Unique Id', how='left')
+            df[sales] = df[sales].apply(lambda x: x.apply(lambda x: str(x)[:10] if str(x) != 'nan' else ''))
+            df[[col for col in df.columns if 'Available' in col]] = df[[col for col in df.columns if 'Available' in col]].apply(lambda x: x.apply(lambda x: pd.Timestamp(x) if type(x) == int else x))
+            df[[col for col in df.columns if 'Available' in col]] = df[[col for col in df.columns if 'Available' in col]].apply(lambda x: x.apply(lambda x: str(x).replace(' 00:00:00', '')))
+            df[[col for col in df.columns if 'Holdback' in col]] = df[[col for col in df.columns if 'Holdback' in col]].apply(lambda x: x.apply(lambda x: str(x).replace(' 00:00:00', '')))
+            df = df.apply(lambda x: x.apply(lambda x: '' if str(x) == 'NaT' else x))
+            cols_ordered = [col for col in df.columns if col != '']
+            cols2drop = ['AKA 1', 'AKA 2', 'Original Language', 'Previous Sale Activity', 'Unique Id', 'Is Reissue?']
+
+            for col in cols2drop:
+                cols_ordered.remove(col)
+
+            with BytesIO() as b:
+                writer = pd.ExcelWriter(b, engine='openpyxl')
+                df[cols_ordered].to_excel(writer, sheet_name='Avails')
+                writer.save()
+                response = HttpResponse(b.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+                response['Content-Disposition'] = 'attachment; filename=%s.xlsx' % 'FreeTV Avails'
             return response
         else:
             return render(request, 'avails/avails.html', {'error': 'All files required'})
