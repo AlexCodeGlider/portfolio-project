@@ -45,7 +45,7 @@ def tidy_split(df, column, sep=',', keep=False):
     new_df[column] = new_values
     return new_df
 
-def cleanup(df, suffix):
+def cleanup(df, suffix=''):
     df['Non-Exclusive Date'] = df['Non-Exclusive Date'].replace('NOT AVAIL', np.nan).astype('datetime64')
     df['Non-Exclusive Date'] = df.apply(lambda x: dt.date.today() if x['Available?'] == 'Avail NE' else x['Non-Exclusive Date'], axis=1)
     max_prev_sale_enddate = df['Previous Sale Activity'].str.extractall(r'(\d{2}[-]\w{3}[-]\d{4})').astype('datetime64').reset_index().groupby('level_0')[0].max()
@@ -76,8 +76,8 @@ def cleanup(df, suffix):
 
     df = df.join(sale_activity, on='Unique Id', how='left').sort_values(by='Unique Id')
 
-    df.columns = list(df.columns[:13]) + [str(col) + '_' + suffix for col in df.columns[13:]]
-    return df, [str(col) + '_' + suffix for col in sale_activity.columns]
+    df.columns = list(df.columns[:13]) + [str(col) + suffix for col in df.columns[13:]]
+    return df, [str(col) + suffix for col in sale_activity.columns]
 
 def process(df, sales, screeners, ratings):
     metadata = ['Title', 'Genre', 'Cast Member', 'Year Completed', 'Director',
@@ -86,25 +86,12 @@ def process(df, sales, screeners, ratings):
 
     metadata_df = df[metadata].drop_duplicates().copy()
 
-    agg_dict = {'Region': lambda x: ' & '.join(x),
-                        'First Run or Library_PanRegionalPayTV':'first',
-                        'Available?_PanRegionalPayTV': 'first',
-                         'Holdback_PanRegionalPayTV': 'first',
-                         'Note_PanRegionalPayTV': 'first',
-                         'Acq. Expires_PanRegionalPayTV': 'first',
-                         'Previous Sale Activity_PanRegionalPayTV': 'first',
-                        'First Run or Library_LocalPayTV':'first',
-                         'Available?_LocalPayTV': 'first',
-                         'Holdback_LocalPayTV': 'first',
-                         'Note_LocalPayTV': 'first',
-                         'Acq. Expires_LocalPayTV': 'first',
-                         'Previous Sale Activity_LocalPayTV': 'first',
-                        'First Run or Library_SVOD':'first',
-                         'Available?_SVOD': 'first',
-                         'Holdback_SVOD': 'first',
-                         'Note_SVOD': 'first',
-                         'Acq. Expires_SVOD': 'first',
-                         'Previous Sale Activity_SVOD': 'first'}
+    agg_dict = {'Region': lambda x: ' & '.join(x)}
+
+    for col in df.columns:
+        for colname in ['First Run or Library', 'Available', 'Holdback', 'Note', 'Acq. Expires', 'Previous Sale Activity']:
+            if colname in col:
+                agg_dict[col] = 'first'
 
     sales = [sale for sale in sales if not sale.startswith('_')]
 
@@ -160,7 +147,7 @@ def process(df, sales, screeners, ratings):
 def avails(request):
     if request.method == "POST":
         dataset = Dataset()
-        if request.FILES['svod_avails'] and request.FILES['ptv_avails'] and request.FILES['ptv_local_avails'] and request.FILES['screeners'] and request.FILES['ratings']:
+        if 'svod_avails' in request.FILES.keys() and 'ptv_avails' in request.FILES.keys() and 'ptv_local_avails' in request.FILES.keys() and 'screeners' in request.FILES.keys() and 'ratings' in request.FILES.keys():
             imported_svod = dataset.load(request.FILES['svod_avails'].read(), format='xlsx')
             imported_svod.headers = imported_svod[0]
             svod_avails = imported_svod.export('df')
@@ -188,9 +175,9 @@ def avails(request):
             ratings['Unique Id'] = ratings['Unique Identifier'].astype(int)
             ratings.drop(['Unique Identifier', 'Title', 'Imdb'], axis = 1, inplace=True)
 
-            svod_avails, svod_sales = cleanup(svod_avails, 'SVOD')
-            ptv_avails, ptv_sales = cleanup(ptv_avails, 'PanRegionalPayTV')
-            ptv_local_avails, ptv_local_sales = cleanup(ptv_local_avails, 'LocalPayTV')
+            svod_avails, svod_sales = cleanup(svod_avails, '_SVOD')
+            ptv_avails, ptv_sales = cleanup(ptv_avails, '_PanRegionalPayTV')
+            ptv_local_avails, ptv_local_sales = cleanup(ptv_local_avails, '_LocalPayTV')
 
             ptv_avails = ptv_avails.merge(ptv_local_avails, on=list(ptv_avails.columns[:13]), how='left')
             merged_df = ptv_avails.merge(svod_avails, on=list(ptv_avails.columns[:13]), how='left')
@@ -232,6 +219,55 @@ def avails(request):
                 writer.save()
                 response = HttpResponse(b.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
                 response['Content-Disposition'] = 'attachment; filename=%s.xlsx' % 'SVOD-PayTV Avails'
+            return response
+
+        elif 'ptv_avails' in request.FILES.keys() and 'screeners' in request.FILES.keys() and 'ratings' in request.FILES.keys():
+            imported_ptv = dataset.load(request.FILES['ptv_avails'].read(), format='xlsx')
+            imported_ptv.headers = imported_ptv[0]
+            ptv_avails = imported_ptv.export('df')
+            ptv_avails.drop([0], inplace=True)
+
+            imported_screeners = dataset.load(request.FILES['screeners'].read(), format='xlsx')
+            screeners = imported_screeners.export('df')
+            screeners.dropna(axis=0, subset=['Unique Identifier'], inplace=True)
+            screeners['Unique Id'] = screeners['Unique Identifier'].astype(int)
+            screeners.drop(['Unique Identifier', 'Title', 'Web Site'], axis = 1, inplace=True)
+
+            imported_ratings = dataset.load(request.FILES['ratings'].read(), format='xls')
+            ratings = imported_ratings.export('df')
+            ratings.dropna(axis=0, subset=['Unique Identifier'], inplace=True)
+            ratings['Unique Id'] = ratings['Unique Identifier'].astype(int)
+            ratings.drop(['Unique Identifier', 'Title', 'Imdb'], axis = 1, inplace=True)
+
+            ptv_avails, ptv_sales = cleanup(ptv_avails)
+
+            sales = ptv_sales
+            sales = [sale for sale in sales if not sale.startswith('_')]
+
+            df = process(ptv_avails, sales, screeners, ratings)
+
+            cols_ordered = ['Project Type', 'Unique Id', 'Title', 'Region', 'Year', 'Genre', 'Cast Member',
+                            'Director',  'Synopsis', 'Website',
+                            'Original Format', 'Dialogue Language', 'Subtitle Language',
+
+                            'First Run or Library',
+                            'Available?', 'Non-Exclusive Date',
+                            'Exclusive Date', 'Note',
+                            'Holdback',
+
+                            'Acq. Expires',
+                            'Link','Password', 'IMDB Link', 'US Box Office', 'LATAM Box Office', 'USA ',
+                            'Mexico', 'Brazil', ' Argentina', 'Bolivia', 'Chile', 'Colombia ',
+                            'Costa Rica', 'Ecuador', 'El Salvador', 'Guatemala', 'Honduras',
+                            'Nicaragua', 'Panama', 'Paraguay', 'Peru', 'Dominican Republic',
+                            'Uruguay', 'Venezuela']
+
+            with BytesIO() as b:
+                writer = pd.ExcelWriter(b, engine='openpyxl')
+                df[cols_ordered + sales].to_excel(writer, sheet_name='Avails')
+                writer.save()
+                response = HttpResponse(b.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+                response['Content-Disposition'] = 'attachment; filename=%s.xlsx' % 'PanRegionalPayTV Avails'
             return response
         else:
             return render(request, 'avails/avails.html', {'error': 'All files required'})
