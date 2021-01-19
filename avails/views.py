@@ -66,8 +66,7 @@ def cleanup(df, suffix=''):
     df['max_prev_sale_enddate'] = max_prev_sale_enddate
     df['Exclusive Date'] = df['Exclusive Date'].replace(['NOT AVAIL', 'NOT ACQ'], np.nan).astype('datetime64')
     max_prev_sale_enddate = df[['Exclusive Date', 'max_prev_sale_enddate']].max(axis=1)
-    mask = ~df['Exclusive Date'].isna()
-    df.loc[mask, 'Exclusive Date'] = max_prev_sale_enddate
+    df['Exclusive Date'] = max_prev_sale_enddate
     mask = df['Holdback'] <= dt.datetime.today()
     df['Holdback'].loc[mask] = pd.NaT
     mask = (df['Non-Exclusive Date'] < df['Exclusive Date']) & (df['Non-Exclusive Date'] > dt.datetime.today())
