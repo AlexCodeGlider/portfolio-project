@@ -61,11 +61,10 @@ def sale_activity(df, suffix=''):
 def cleanup(df, suffix=''):
     df['Non-Exclusive Date'] = df['Non-Exclusive Date'].replace('NOT AVAIL', np.nan).astype('datetime64')
     df['Non-Exclusive Date'] = df.apply(lambda x: dt.date.today() if x['Available?'] == 'Avail NE' else x['Non-Exclusive Date'], axis=1)
-    max_prev_sale_enddate = df['Previous Sale Activity'].str.extractall(r'(\d{2}[-]\w{3}\.?[-]\d{4})').replace('.', '')
-    print(max_prev_sale_enddate.head())
+    max_prev_sale_enddate = df['Previous Sale Activity'].str.extractall(r'(\d{2}\-\w{3}(\.)?\-\d{4})').replace('.', '')
     date_dict = {'ene': '01', 'feb': '02', 'mar': '03', 'abr': '04', 'may':'05', 'jun': '06', 'jul': '07', 'ago': '08', 'sep':'09', 'oct': '10', 'nov': '11', 'dic': '12'}
     max_prev_sale_enddate = max_prev_sale_enddate.replace(date_dict, regex=True)
-    max_prev_sale_enddate = max_prev_sale_enddate.astype('datetime64').reset_index().groupby('level_0')[0].max()
+    max_prev_sale_enddate = max_prev_sale_enddate.astype('datetime64[ns]').reset_index().groupby('level_0')[0].max()
     max_prev_sale_enddate = max_prev_sale_enddate + pd.DateOffset(1)
     df['max_prev_sale_enddate'] = max_prev_sale_enddate
     df['Exclusive Date'] = df['Exclusive Date'].replace(['NOT AVAIL', 'NOT ACQ'], np.nan).astype('datetime64')
