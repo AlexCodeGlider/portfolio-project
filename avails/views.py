@@ -137,6 +137,8 @@ def process(df, sales, screeners, ratings):
 
     for col in date_cols:
         df[col] = df[col].apply(lambda x: x.date())
+        mask = df[col] >= df['Acq. Expires']
+        df[col].loc[mask] = ''
         df[col] = df[col].apply(lambda x: 'Now' if x == dt.date.today() else x)
 
     df['Year'] = df['Year Completed']
