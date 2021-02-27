@@ -7,7 +7,7 @@ import datetime as dt
 from io import BytesIO
 from tablib import Dataset
 
-# Create your views here.
+today = pd.Timestamp.date(pd.Timestamp.today())
 
 def tidy_split(df, column, sep=',', keep=False):
     """
@@ -59,22 +59,26 @@ def sale_activity(df, suffix=''):
     return df.join(sale_act, on='Unique Id', how='left').sort_values(by='Unique Id'), [str(col) + suffix for col in sale_act.columns]
 
 def cleanup(df, suffix=''):
-    df['Non-Exclusive Date'] = df['Non-Exclusive Date'].replace('NOT AVAIL', np.nan).astype('datetime64')
-    df['Non-Exclusive Date'] = df.apply(lambda x: dt.date.today() if x['Available?'] == 'Avail NE' else x['Non-Exclusive Date'], axis=1)
-    max_prev_sale_enddate = df['Previous Sale Activity'].str.extractall(r'(\d{2}\-\w{3}(\.)?\-\d{4})').replace('.', '')
+    date_map = {'NOW': today, 'NOT AVAIL': pd.NaT, 'NOT ACQ': pd.NaT}
+    df['Non-Exclusive Date'] = df['Non-Exclusive Date'].replace(date_map)
+    df['Exclusive Date'] = df['Exclusive Date'].replace(date_map)
+    df['Non-Exclusive Date'] = df.apply(lambda x: today if x['Available?'] == 'Avail NE' else x['Non-Exclusive Date'], axis=1)
+    max_prev_sale_enddate = df['Previous Sale Activity'].str.extractall(r'(\\d{2}\\-\\w{3}(\\.)?\\-\\d{4})').replace('.', '')
     date_dict = {'ene': '01', 'feb': '02', 'mar': '03', 'abr': '04', 'may':'05', 'jun': '06', 'jul': '07', 'ago': '08', 'sep':'09', 'oct': '10', 'nov': '11', 'dic': '12'}
     max_prev_sale_enddate = max_prev_sale_enddate.replace(date_dict, regex=True)
     max_prev_sale_enddate = max_prev_sale_enddate.astype('datetime64[ns]').reset_index().groupby('level_0')[0].max()
     max_prev_sale_enddate = max_prev_sale_enddate + pd.DateOffset(1)
     df['max_prev_sale_enddate'] = max_prev_sale_enddate
-    df['Exclusive Date'] = df['Exclusive Date'].replace(['NOT AVAIL', 'NOT ACQ'], np.nan).astype('datetime64')
     max_prev_sale_enddate = df[['Exclusive Date', 'max_prev_sale_enddate']].max(axis=1)
     df['Exclusive Date'] = max_prev_sale_enddate
-    mask = df['Holdback'] <= dt.datetime.today()
+    df['Holdback'] = df['Holdback'].apply(lambda x: pd.Timestamp.date(x))
+    mask = df['Holdback'] <= today
     df['Holdback'].loc[mask] = pd.NaT
-    mask = (df['Non-Exclusive Date'] < df['Exclusive Date']) & (df['Non-Exclusive Date'] > dt.datetime.today())
+    df['Non-Exclusive Date'] = df['Non-Exclusive Date'].apply(lambda x: pd.Timestamp.date(x))
+    df['Exclusive Date'] = df['Exclusive Date'].apply(lambda x: pd.Timestamp.date(x))
+    mask = (df['Non-Exclusive Date'] < df['Exclusive Date']) & (df['Non-Exclusive Date'] > today)
     df['Available?'].loc[mask] = df['Non-Exclusive Date'].loc[mask]
-    df['Available?'] = df['Available?'].apply(lambda x: pd.Timestamp(x) if type(x) == int else x)
+    df['Available?'] = df['Available?'].apply(lambda x: pd.Timestamp.date(pd.Timestamp(x)) if type(x) == int else x)
     df['First Run or Library'] = df['Is Reissue?'].fillna('First Run')
     df['First Run or Library'] = df['First Run or Library'].map({'Yes': 'Library', 'First Run': 'First Run'})
 
@@ -129,24 +133,24 @@ def process(df, sales, screeners, ratings):
     df = pd.merge(df, screeners, on='Unique Id', how='left')
     df = pd.merge(df, ratings, on='Unique Id', how='left')
     acq_exp_cols = [col for col in df.columns if 'Acq. Expires' in col]
-    expiry_dates = df[acq_exp_cols[0]].apply(lambda x: x.date())
+    expiry_dates = df[acq_exp_cols[0]].apply(lambda x: pd.Timestamp.date(x))
     df.drop(acq_exp_cols, axis=1, inplace=True)
     df['Acq. Expires'] = expiry_dates
     date_cols = [col for col in df.columns if 'Date' in col]
     df[date_cols] = df[date_cols].replace({pd.Timestamp.max: pd.NaT})
 
     for col in date_cols:
-        df[col] = df[col].apply(lambda x: x.date())
         mask = df[col] >= df['Acq. Expires']
-        df[col].loc[mask] = ''
-        df[col] = df[col].apply(lambda x: 'Now' if x == dt.date.today() else x)
+        df[col].loc[mask] = pd.NaT
+        df[col] = df[col].apply(lambda x: 'Now' if x == today else x)
 
     df['Year'] = df['Year Completed']
     df[sales] = df[sales].apply(lambda x: x.apply(lambda x: str(x)[:10] if str(x) != 'nan' else ''))
-    df[[col for col in df.columns if 'Available' in col]] = df[[col for col in df.columns if 'Available' in col]].apply(lambda x: x.apply(lambda x: pd.Timestamp(x) if type(x) == int else x))
+    df[[col for col in df.columns if 'Available' in col]] = df[[col for col in df.columns if 'Available' in col]].apply(lambda x: x.apply(lambda x: pd.Timestamp.date(pd.Timestamp(x)) if type(x) == int else x))
     df[[col for col in df.columns if 'Available' in col]] = df[[col for col in df.columns if 'Available' in col]].apply(lambda x: x.apply(lambda x: str(x).replace(' 00:00:00', '')))
     df[[col for col in df.columns if 'Holdback' in col]] = df[[col for col in df.columns if 'Holdback' in col]].apply(lambda x: x.apply(lambda x: str(x).replace(' 00:00:00', '')))
-    df = df.apply(lambda x: x.apply(lambda x: '' if str(x) == 'NaT' else x))
+    df[[col for col in df.columns if 'Date' in col]] = df[[col for col in df.columns if 'Date' in col]].apply(lambda x: x.apply(lambda x: str(x).replace(' 00:00:00', '')))
+    df = df.apply(lambda x: x.apply(lambda x: '' if (str(x) == 'NaT' or str(x) == 'None' or str(x) == '0001-01-01') else x))
 
     return df
 
