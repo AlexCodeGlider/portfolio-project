@@ -71,7 +71,7 @@ def cleanup(df, suffix=''):
     df['max_prev_sale_enddate'] = max_prev_sale_enddate
     max_prev_sale_enddate = df[['Exclusive Date', 'max_prev_sale_enddate']].max(axis=1)
     df['Exclusive Date'] = max_prev_sale_enddate
-    df['Holdback'] = df['Holdback'].apply(lambda x: pd.Timestamp.date(x))
+    df['Holdback'] = df['Holdback'].apply(lambda x: pd.Timestamp.date(x) if x != None else None)
     mask = df['Holdback'] <= today
     df['Holdback'].loc[mask] = pd.NaT
     df['Non-Exclusive Date'] = df['Non-Exclusive Date'].apply(lambda x: pd.Timestamp.date(x))
